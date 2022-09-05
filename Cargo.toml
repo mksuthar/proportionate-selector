@@ -1,0 +1,26 @@
+[package]
+name = "proportionate_selector"
+description = "Selecting useful solutions for recombination via fitness proportionate selection"
+version = "0.1.0"
+authors = ["Megh <meghss@protonmail.com>"]
+edition = "2018"
+license = "MIT"
+keywords = ["random", "statistics"]
+include = ["/src", "LICENCE"]
+exclude = ["/benches"]
+
+[dependencies]
+rand = {version = "0.8.5", features=["small_rng"]}
+num = "0.4"
+
+[dev-dependencies]
+criterion = "0.3"
+kolmogorov_smirnov = "1.1.0"
+
+[lib]
+name = "proportionate_selector"
+path = "src/lib.rs"
+
+[[bench]]
+name = "benchmark"
+harness = false
