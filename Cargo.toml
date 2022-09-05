@@ -7,6 +7,9 @@ edition = "2018"
 license = "MIT"
 keywords = ["random", "statistics"]
 include = ["/src", "LICENCE"]
+readme = "Readme.md"
+repository = "https://github.com/mksuthar/proportionate-selector"
+
 
 [dependencies]
 rand = {version = "0.8.5", features=["small_rng"]}
