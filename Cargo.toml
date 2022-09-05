@@ -7,7 +7,6 @@ edition = "2018"
 license = "MIT"
 keywords = ["random", "statistics"]
 include = ["/src", "LICENCE"]
-exclude = ["/benches"]
 
 [dependencies]
 rand = {version = "0.8.5", features=["small_rng"]}
@@ -23,4 +22,5 @@ path = "src/lib.rs"
 
 [[bench]]
 name = "benchmark"
+path = "benches/benchmark.rs"
 harness = false
