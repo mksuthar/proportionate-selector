@@ -96,8 +96,11 @@
 //!   Memory: 16 GB
 //! ```
 //!
+pub mod errors;
 pub mod util;
 
+use anyhow::{bail, Result};
+use errors::ProportionalSelectionErr::*;
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::SmallRng;
 use rand::Rng;
@@ -150,13 +153,6 @@ enum DistributionStore<'a, T: Probability> {
     },
 }
 
-#[derive(Debug)]
-pub enum ProportionalSelectionErr {
-    ProbabilitiesGreatherThanOne,
-    ProbabilitiesLessThanOne,
-    InsufficientProbabilitiesProvided,
-}
-
 /// Represents empirical discrete distribution.
 pub struct DiscreteDistribution<'a, T: Probability> {
     /// Stores distribution attributes for quick sample generation.
@@ -197,47 +193,35 @@ impl<'_a, T: Probability> DiscreteDistribution<'_a, T> {
     ///     MultiVariantMarketingWebsiteItem {id: 4, rarity: 10.0}, // 40%
     /// ];
     ///
-    /// // create discrete distribution for sampling
+    /// // create distribution for sampling
     /// let epdf = DiscreteDistribution::new(&summer2020Launch, SamplingMethod::Linear);
-    ///
-    /// assert_eq!(epdf.is_ok(), true);
+    /// assert!(epdf.is_ok());
     /// ```
-    pub fn new(
-        items: &'_a Vec<T>,
-        method: SamplingMethod,
-    ) -> Result<Self, ProportionalSelectionErr> {
-        use ProportionalSelectionErr::*;
+    pub fn new(items: &'_a Vec<T>, method: SamplingMethod) -> Result<Self> {
+        // Must have definable discrete distribution.
+        let n = items.len();
+        if n <= 1 {
+            bail!(InsufficientProbabilitiesProvided { actual: n });
+        }
 
         // Apply some tolerance to probability bounds.
         const EPSILON: f64 = 0.001;
         let total_p: f64 = items.iter().map(|i| i.prob()).sum();
 
         // Impossible to perform sampling per occurance probabilitity, if
-        // occurance of all possible scenario is greater than 1.
-        if total_p > 1.0 + EPSILON {
-            print!("{:?}", total_p);
-            return Err(ProbabilitiesGreatherThanOne);
-        }
-        // Impossible to perform sampling per occurance probabilitity, if
-        // occurance of all possible scenario is less than 1.
-        if 1.0 - EPSILON > total_p {
-            return Err(ProbabilitiesLessThanOne);
-        }
-
-        let n = items.len();
-        if n <= 1 {
-            return Err(InsufficientProbabilitiesProvided);
+        // occurance of all possible scenario is greater than 1 or less than 1.
+        if !(1.0 - EPSILON..=1.0 + EPSILON).contains(&total_p) {
+            bail!(SumOfAllProbabilitiesDoesNotEqualToOne { actual: total_p });
         }
 
         match method {
             SamplingMethod::Linear => {
-                let mut freq: Vec<f64> = vec![0.0; n];
-                let mut total = 0.0;
+                let freq = items
+                    .iter()
+                    .map(|item| item.prob() * 100.0)
+                    .collect::<Vec<_>>();
 
-                for (i, item) in items.iter().enumerate() {
-                    freq[i] = item.prob() * 100.0;
-                    total += item.prob() * 100.0;
-                }
+                let total = freq.iter().sum();
 
                 Ok(Self {
                     store: DistributionStore::Frequency { freq, total, items },
@@ -245,13 +229,14 @@ impl<'_a, T: Probability> DiscreteDistribution<'_a, T> {
             }
 
             SamplingMethod::CumulativeDistributionFunction => {
-                let mut cdf: Vec<f64> = vec![0.0; n];
-                let mut acc = 0.0;
-
-                for (i, item) in items.iter().enumerate() {
-                    acc += item.prob();
-                    cdf[i] = acc;
-                }
+                let cdf = items
+                    .iter()
+                    .enumerate()
+                    .scan(0.0, |acc, item| {
+                        *acc += item.1.prob();
+                        Some(*acc)
+                    })
+                    .collect::<Vec<_>>();
 
                 Ok(Self {
                     store: DistributionStore::Cdf { cdf, items },
@@ -313,7 +298,7 @@ impl<'_a, T: Probability> DiscreteDistribution<'_a, T> {
     /// let epdf = DiscreteDistribution::new(&endOfLevel1Box, SamplingMethod::Linear).unwrap();
     /// let s = epdf.sample();
     ///
-    /// assert_eq!(s.is_none(), false);
+    /// assert!(s.is_some());
     /// ```
     ///
     pub fn sample(&'_a self) -> Option<&T> {
@@ -329,11 +314,7 @@ impl<'_a, T: Probability> DiscreteDistribution<'_a, T> {
     }
 }
 
-fn sample_linear<'a, T: Probability>(
-    freq: &'a [f64],
-    total: &'a f64,
-    items: &'a [T],
-) -> Option<&'a T> {
+fn sample_linear<'a, T: Probability>(freq: &[f64], total: &f64, items: &'a [T]) -> Option<&'a T> {
     let mut rng = rand::thread_rng();
     let total_n = convert(*total + 1.0);
     let terminal = f64::from(Uniform::from(0..total_n).sample(&mut rng));
@@ -349,13 +330,13 @@ fn sample_linear<'a, T: Probability>(
     None
 }
 
-fn sample_cdf<'a, T: Probability>(cdf: &'a [f64], items: &'a [T]) -> Option<&'a T> {
+fn sample_cdf<'a, T: Probability>(cdf: &[f64], items: &'a [T]) -> Option<&'a T> {
     let mut rng = rand::thread_rng();
     let random = rng.gen();
     items.get(bisect_left(cdf, &random))
 }
 
-fn sample_stochastic<'a, T: Probability>(max_freq: &'a f64, items: &'a [T]) -> Option<&'a T> {
+fn sample_stochastic<'a, T: Probability>(max_freq: &f64, items: &'a [T]) -> Option<&'a T> {
     let n = items.len();
     let mut small_rng = SmallRng::from_entropy();
     loop {
@@ -419,28 +400,21 @@ mod tests {
     }
 
     /// Basic Monte Carlo Simulation
-    fn monte_carlo(store: DiscreteDistribution<(char, f64)>, n: i64) -> HashMap<char, f64> {
-        let mut counter: HashMap<char, f64> = HashMap::new();
-        let mut iter = 0;
-        loop {
-            if iter > n {
-                break;
-            }
-            iter += 1;
-
-            match store.sample() {
-                Some(p) => *counter.entry(p.0).or_insert(0.0) += 1.0,
-                None => continue,
-            }
-        }
-        counter
+    fn monte_carlo(store: DiscreteDistribution<(char, f64)>, n: usize) -> HashMap<char, f64> {
+        std::iter::repeat_with(|| store.sample())
+            .take(n)
+            .filter_map(std::convert::identity)
+            .fold(HashMap::new(), |mut counter, p| {
+                *counter.entry(p.0).or_insert(0.0) += 1.0;
+                counter
+            })
     }
 
     /// Asserts if generated distribution from sample() matches that of
     /// provided distribution using Kolmogorov-Smirnov test.
     ///
     /// Reference: https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test
-    fn matches_expected_distribution(n: i64, method: SamplingMethod) {
+    fn matches_expected_distribution(n: usize, method: SamplingMethod) {
         // Setup
         let mut abc_probs = FIXTURE_ALPHABETS_PROBS.to_vec();
         abc_probs.sort_by(|a, b| a.0.cmp(&b.0));
