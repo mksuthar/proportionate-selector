@@ -1,4 +1,6 @@
 # Proportionate selection
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fmksuthar%2Fproportionate-selector.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fmksuthar%2Fproportionate-selector?ref=badge_shield)
+
 
 `proportionate_selector` allows sampling from empirical discrete distribution,
 at rumtime. Each sample is generated independently, and has no coupling to previously
@@ -106,3 +108,7 @@ cargo doc       # generate docs
 cargo criterion # benchmarks
 cargo clippy    # linter
 ```
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fmksuthar%2Fproportionate-selector.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fmksuthar%2Fproportionate-selector?ref=badge_large)
